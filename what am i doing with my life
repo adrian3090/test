@@ -1,0 +1,245 @@
+public class StudentRepository : AdoRepository<Student>
+    {
+        public int DataCounter { get; set; }
+        public bool hasError { get; set; }
+        public string ErrorMessage { get; set; }
+
+        public StudentRepository(string connectionString)
+            : base(connectionString)
+        {
+        }
+
+        public IEnumerable<Student> GetAll()
+        {
+            // DBAs across the country are having strokes 
+            //  over this next command!
+            using (var command = new SqlCommand("SELECT ID, FirstName,LastName,IsActive,StateName,CityName FROM vwListStudents"))
+            {
+                return GetRecords(command);
+            }
+        }
+        public Student GetById(string id)
+        {
+            // PARAMETERIZED QUERIES!
+            using (var command = new SqlCommand("SELECT ID, FirstName,LastName,IsActive,StateName,CityName FROM vwListStudents WHERE Id = @id"))
+            {
+                command.Parameters.Add(new ObjectParameter("id", id));
+                return GetRecord(command);
+            }
+        }
+
+        public IEnumerable<Student> SaveXML(string strXML, int PageNo,int PageSize,string SortCol,string SortOrder)
+        {
+            if (PageNo <= 0) PageNo = 1;
+
+            using (var command = new SqlCommand("USP_SaveStudent"))
+            {
+                command.Parameters.Add("@Data", SqlDbType.VarChar,-1).Value = strXML;
+                command.Parameters.Add("@PageNbr", SqlDbType.Int).Value = PageNo;
+                command.Parameters.Add("@PageSize", SqlDbType.Int).Value = PageSize;
+                command.Parameters.Add("@SortColumn", SqlDbType.VarChar, 20).Value = SortCol;
+                command.Parameters.Add("@SortOrder", SqlDbType.VarChar, 4).Value = SortOrder;
+
+                return ExecuteStoredProc(command);
+            }
+        }
+
+        public IEnumerable<Student> Delete(int id, int PageNo, int PageSize, string SortCol, string SortOrder)
+        {
+            if (PageNo <= 0) PageNo = 1;
+
+            using (var command = new SqlCommand("USP_DeleteStudent"))
+            {
+                command.Parameters.Add("@ID", SqlDbType.VarChar, -1).Value = id;
+                command.Parameters.Add("@PageNbr", SqlDbType.Int).Value = PageNo;
+                command.Parameters.Add("@PageSize", SqlDbType.Int).Value = PageSize;
+                command.Parameters.Add("@SortColumn", SqlDbType.VarChar, 20).Value = SortCol;
+                command.Parameters.Add("@SortOrder", SqlDbType.VarChar, 4).Value = SortOrder;
+
+                return ExecuteStoredProc(command);
+            }
+        }
+
+        public IEnumerable<Student> GetStudents(int PageNo, int PageSize, string SortCol, string SortOrder)
+        {
+            //string strSQL = "SELECT * FROM vwListStudents WHERE ID >=" + StartIndex + " AND ID <=" + EndIndex;
+            //strSQL += " ORDER BY " + sortCol + " " + sortOrder;
+            //strSQL += ";SELECT COUNT(*) AS Count FROM vwListStudents";
+            //var command = new SqlCommand(strSQL);
+            //return GetRecords(command);
+            if (SortOrder == "Ascending")
+                SortOrder = "ASC";
+            else if (SortOrder == "Descending")
+                SortOrder = "DESC";
+
+                if (PageNo <= 0) PageNo = 1;
+
+            using (var command = new SqlCommand("USP_GetStudentData"))
+            {
+                command.Parameters.Add("@PageNbr", SqlDbType.Int).Value = PageNo;
+                command.Parameters.Add("@PageSize",SqlDbType.Int).Value=  PageSize;
+                command.Parameters.Add("@SortColumn", SqlDbType.VarChar, 20).Value = SortCol;
+                command.Parameters.Add("@SortOrder", SqlDbType.VarChar, 4).Value = SortOrder;
+                return ExecuteStoredProc(command);
+            }
+        }
+
+        public override Student PopulateRecord(SqlDataReader reader)
+        {
+            return new Student
+            {
+                ID = Convert.ToInt32(reader["ID"].ToString()),
+                FirstName = reader["FirstName"].ToString(),
+                LastName = reader["LastName"].ToString(),
+                IsActive = Convert.ToBoolean(reader["IsActive"]),
+                StateID = Convert.ToInt32(reader["StateID"].ToString()),
+                StateName = reader["StateName"].ToString(),
+                CityID = Convert.ToInt32(reader["CityID"].ToString()),
+                CityName = reader["CityName"].ToString()
+            };
+        }
+
+        public override void GetDataCount(int count)
+        {
+            DataCounter = count;
+        }
+
+        public override void Status(bool IsError, string strErrMsg)
+        {
+            hasError = IsError;
+            ErrorMessage = strErrMsg;
+        }
+    }
+
+Student Model
+---------------
+public class Student
+    {
+        public int ID { get; set; }
+        [Required(ErrorMessage = "First Name Required")]
+        public string FirstName { get; set; }
+        [Required(ErrorMessage = "Last Name Required")]
+        public string LastName { get; set; }
+        public bool IsActive { get; set; }
+
+        public int StateID { get; set; }
+        public string StateName { get; set; }
+
+        public int CityID { get; set; }
+        public string CityName { get; set; }
+}
+
+Student View Model
+------------------
+public class StudentListViewModel
+        {
+            public int StartIndex { get; set; }
+            public int EndIndex { get; set; }
+            public int page { get; set; }
+            public int RowCount { get; set; }
+            public int PageSize { get; set; }
+            public int CurrentPage { get; set; }
+
+            public string sort { get; set; }
+            public string sortdir { get; set; }
+
+            public IList<Student> Students { get; set; }
+
+            [Required(ErrorMessage = "State Required")]
+            public int SelectedStateId { set; get; }
+            public IList<State> States { get; set; }
+
+            [Required(ErrorMessage = "City Required")]
+            public int SelectedCityId { set; get; }
+            public IList<City> Cities { get; set; }
+
+            public StudentListViewModel()
+            {
+                PageSize = 5;
+                sort = "ID";
+                sortdir = "ASC";
+                CurrentPage = 1;
+            }
+
+            public void SetUpParams(StudentListViewModel oSVm)
+            {
+                if (oSVm.page == 0)
+                    oSVm.page = 1;
+
+                StartIndex = ((oSVm.page * oSVm.PageSize) - oSVm.PageSize) + 1;
+                EndIndex = (oSVm.page * oSVm.PageSize);
+                CurrentPage = (StartIndex - 1) / oSVm.PageSize;
+
+                if (string.IsNullOrEmpty(oSVm.sort))
+                    oSVm.sort = "ID";
+
+                if (string.IsNullOrEmpty(oSVm.sortdir))
+                    oSVm.sortdir = "ASC";
+            }
+}
+
+Here is few action which i need to test
+---------------------------------------
+public ActionResult List(StudentListViewModel oSVm)
+        {
+            if (Request.IsAjaxRequest())
+                System.Threading.Thread.Sleep(1000); // just simulate delay of one second
+
+            StudentListViewModel SVm = new StudentListViewModel();
+            SVm.SetUpParams(oSVm);
+            SVm.Students = _Studentdata.GetStudents(oSVm.page, oSVm.PageSize, oSVm.sort, oSVm.sortdir).ToList();
+            SVm.States = _Statedata.GetAll().ToList();
+            SVm.Cities = _Citydata.GetAll().ToList();
+            SVm.RowCount = _Studentdata.DataCounter;
+            return View("ListStudents",SVm);
+        }
+
+        [HttpPost]
+        public ActionResult UpdateStudents(StudentListViewModel oSVm, string Action)
+        {
+            if (Request.IsAjaxRequest())
+                System.Threading.Thread.Sleep(1000); // just simulate delay of one second
+
+            StudentListViewModel SVm = new StudentListViewModel();
+            SVm.SetUpParams(oSVm);
+            if (Action == "UPDATE")
+            {
+                SVm.Students = _Studentdata.SaveXML(new List<Student>(oSVm.Students).ToXml("Students"),
+                    oSVm.page, oSVm.PageSize, oSVm.sort, oSVm.sortdir).ToList();
+            }
+            else if (Action == "DELETE")
+            {
+                SVm.Students = _Studentdata.Delete(oSVm.Students[0].ID,
+                    oSVm.page, oSVm.PageSize, oSVm.sort, oSVm.sortdir).ToList();
+
+            }
+
+            SVm.States = _Statedata.GetAll().ToList();
+            SVm.Cities = _Citydata.GetAll().ToList();
+            SVm.RowCount = _Studentdata.DataCounter;
+            return PartialView("_StudentGrid", SVm);
+        }
+
+        [HttpPost]
+        public ActionResult RefreshStudents(StudentListViewModel oSVm)
+        {
+            if (Request.IsAjaxRequest())
+                System.Threading.Thread.Sleep(1000); // just simulate delay of one second
+
+            StudentListViewModel SVm = new StudentListViewModel();
+            SVm.SetUpParams(oSVm);
+            SVm.Students = _Studentdata.GetStudents(oSVm.page, oSVm.PageSize, oSVm.sort, oSVm.sortdir).ToList();
+            SVm.States = _Statedata.GetAll().ToList();
+            SVm.Cities = _Citydata.GetAll().ToList();
+            SVm.RowCount = _Studentdata.DataCounter;
+            return PartialView("_StudentGrid", SVm);
+        }
+
+        [HttpGet]
+        public JsonResult GetCityName(int StateID)
+        {
+            if (Request.IsAjaxRequest())
+                System.Threading.Thread.Sleep(1000); // just simulate delay of one second
+
+            return Json(new {CityList =_Citydata.GetCityByStateId(StateID)} , JsonRequestBehavior.AllowGet);
+    }
